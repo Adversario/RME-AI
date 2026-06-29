@@ -119,6 +119,31 @@ the planned building-generation layer for depots, shops, houses, and other
 urban structures where room subdivision, corridors, doors, and internal layout
 must be deterministic.
 
+### Understanding the Synthetic Debug Render
+
+The engine can bake a lightweight visual matrix before writing final OTBM bytes.
+This synthetic render is not meant to look like the Tibia client. It is a fast,
+color-coded inspection layer used by humans and by the Visual Agentic Loop to
+judge whether the map composition makes sense.
+
+![Synthetic debug render example](docs/gallery/debug_render_example.png)
+
+Color guide:
+
+- Green tiles represent open traversal zone filler, such as forest grass, cave
+  trails, or general walkable biome space.
+- Red outlines map out walls, palisades, hard structural edges, and collision
+  boundaries that shape the room or camp silhouette.
+- Grey zones mark internal room flooring, stone surfaces, or specific floor
+  layers produced by the Z-Level Biome Translator.
+- Yellow square overlays point out dynamic decorations, containers, counters,
+  props, and interactive spawn assets.
+
+This render is what lets the Visual Agentic Loop validate spatial composition
+with computer vision before the injector writes the final binary tile changes
+into the OTBM file. In practice, it acts like a fast architectural X-ray of the
+generated map.
+
 ### Phase 3 - Z-Level Biome Translator & Stitcher
 
 The engine supports three-dimensional Z-layer injection. When a real slice has
@@ -277,16 +302,14 @@ regenerated locally when needed.
 
 ## 6. Visual Examples & Prompt Gallery
 
-Use this section to link screenshots from `ai_generator/references/` and keep the
-exact prompts that produced each result.
+Use this section to link screenshots from `docs/gallery/` and keep the exact
+prompts that produced each result.
 
-### Amazon Camp Surface
+### Monsters Camp Surface
 
-Reference image placeholder:
+Image:
 
-```text
-ai_generator/references/amazon_camp.png
-```
+![Monsters Camp Surface](docs/gallery/monsters_camp.jpg)
 
 Prompt:
 
@@ -300,17 +323,15 @@ $body = @{
 
 ### Underground Cave System (-1)
 
-Reference image placeholder:
+Image:
 
-```text
-ai_generator/references/underground_cave.png
-```
+![Underground Cave System](docs/gallery/underground_cave.jpg)
 
 Prompt:
 
 ```powershell
 $body = @{
-    prompt = "Generate a rustic underground cave system below the surface with organic corridors, dirt floors, rock walls, edge rubble, small gravel, and clear walkable paths."
+    prompt = "a deep ice cave infested with frost trolls with a stone ramp descending into a frozen basement layout"
     width = 24
     height = 24
 } | ConvertTo-Json
