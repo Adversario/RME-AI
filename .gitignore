@@ -1,0 +1,47 @@
+# Python cache and local environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Local secrets
+.env
+.env.*
+
+# Root-level RME installer/runtime binaries
+/*.exe
+/*.dll
+/*.dat
+
+# RME binaries and generated map outputs
+template/generated_760.otbm
+template/generated_760-spawn.xml
+template/debug_render*.png
+template/*.otbm
+template/*.xml
+!template/base_760.otbm
+
+# Real map data and mined pools
+template/real map/
+ai_generator/slices_pool.json
+ai_generator/slices_pool.jsonl
+ai_generator/archetypes.json
+data/760/Tibia.dat
+data/760/Tibia.spr
+data/760/*.otb
+
+# Local catalogs can be regenerated from data/760
+ai_generator/tibia_760_catalog.json
+
+# Large or private reference captures
+ai_generator/references/*.png
+ai_generator/references/*.jpg
+ai_generator/references/*.jpeg
+ai_generator/references/*.webp
+!ai_generator/references/.gitkeep
+
+# Editor and OS noise
+.DS_Store
+Thumbs.db
+*.log
