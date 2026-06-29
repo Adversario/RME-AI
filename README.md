@@ -1,173 +1,174 @@
-# RME AI - Hybrid 3D Map Generator for Tibia 7.60
+# RME AI
 
-## Disclaimer - Proof of Concept
+## Hybrid 3D Procedural Map Generator for RME 3.7.0 and Tibia 7.60
 
-RME AI is an experimental Proof of Concept (PoC). It is not a finished product,
-not an official RME feature, and not affiliated with CipSoft or the Remere's Map
-Editor project.
+RME AI is an experimental open-source toolkit that turns high-level map prompts
+into Remere's Map Editor compatible `.otbm` output. It blends AI planning,
+classic procedural generation, real Tibia 7.60 assets, and binary OTBM injection
+into one practical workflow for OpenTibia mapping research.
 
-The goal of this repository is to explore a hybrid AI/procedural workflow for
-OpenTibia mapping. The community is welcome to fork the project, open Issues,
-submit Pull Requests, improve the procedural algorithms, add new biome rules,
-and document compatibility findings.
+> [!WARNING]
+> **Proof of Concept.** RME AI is an experimental PoC, not an official RME
+> feature and not affiliated with CipSoft or the Remere's Map Editor project.
+> Forks, Issues, Pull Requests, algorithm experiments, compatibility reports,
+> and new biome rules are welcome.
 
-## 1. Overview
+---
 
-RME AI is an experimental procedural map-generation toolkit for Remere's Map
-Editor 3.7.0 and OpenTibia/Tibia 7.60 maps. It translates high-level natural
-language prompts into OTBM-ready map edits by combining generative AI with
-classic game-development algorithms.
+## What This Project Does
 
-The system is intentionally hybrid:
+RME AI does not ask the language model to guess item IDs. Instead, the AI plans
+spatial intent while Python resolves the hard technical work:
 
-- Gemini performs high-level spatial planning.
-- Python resolves deterministic geometry, asset IDs, and map validity.
-- RME/Tibia 7.60 assets are read from `data/760/`.
-- Real map fragments can be mined from large OTBM worlds and reused as style
-  references.
-- The final result is injected directly into an OTBM template compatible with
-  RME.
+- It asks Gemini for an 8x8 macro-chunk layout.
+- It mines real map fragments from large OTBM worlds when available.
+- It carves organic cave corridors with Cellular Automata.
+- It prepares a future Binary Space Partitioning path for deterministic
+  buildings.
+- It stitches borders, translates Z-level biomes, and filters unsafe props.
+- It writes the final generated data directly into an OTBM template.
 
-The core design rule is simple: the AI plans intent, not sprites. Real item IDs,
-wall orientation, chunk stitching, Z-level mutation, and binary serialization are
-handled by Python.
+> [!NOTE]
+> **Design Philosophy.** The AI defines *intent*. The engine resolves
+> *implementation*. This keeps Tibia 7.60 compatibility high and prevents the
+> model from hallucinating fragile sprite IDs.
 
-### Compatibility Boundary
+---
 
-This project is tested and supported only for:
+## Compatibility Boundary
 
-- Remere's Map Editor (RME) 3.7.0.
-- Tibia 7.60 assets.
-- The local `data/760/` XML configuration layout used by RME.
-- OTBM templates saved from the same RME/Tibia 7.60 environment.
+This repository is tested and supported only for:
 
-It may work with other RME versions, other client versions, or custom OpenTibia
-distributions, but those targets are not officially supported. Different
-`items.otb`, `items.xml`, `Tibia.dat`, `Tibia.spr`, wall rules, or doodad rules
-can change IDs, collision behavior, sprite orientation, and OTBM expectations.
+- **Remere's Map Editor:** 3.7.0
+- **Client assets:** Tibia 7.60
+- **Configuration layout:** local `data/760/` RME XML files
+- **Map template:** `.otbm` files saved from the same RME/Tibia 7.60 setup
 
-## 2. Hybrid Engine Architecture
+It may work with other RME builds, custom OpenTibia distributions, or later
+client versions, but those targets are not officially supported. Different
+`items.otb`, `items.xml`, `Tibia.dat`, `Tibia.spr`, wall rules, doodads, or OTBM
+expectations can change IDs, collision behavior, and sprite orientation.
 
-### Phase 1 - Macro-Planning Phase
+---
 
-The FastAPI server (`ai_generator/server.py`) receives a user prompt and sends a
-structured request to Google GenAI. Gemini returns a simplified macro-role grid,
-where each cell represents an 8x8 chunk rather than individual tiles.
+## Hybrid Pipeline
+
+```mermaid
+flowchart TD
+    A["User Prompt"] --> B["Gemini Macro-Planning"]
+    B --> C["8x8 Macro-Role Grid"]
+    C --> D["Python Micro-Construction"]
+    D --> E["Organic Caves: Cellular Automata"]
+    D --> F["Urban Buildings: BSP Planned"]
+    D --> G["Real Slice Pattern Matching"]
+    E --> H["Z-Level Biome Translator"]
+    F --> H
+    G --> H
+    H --> I["Edge Stitcher and Structure Linters"]
+    I --> J["Synthetic Debug Render"]
+    J --> K["Visual Agentic Loop"]
+    I --> L["Binary OTBM Injection"]
+    L --> M["template/generated_760.otbm"]
+    L --> N["template/generated_760-spawn.xml"]
+```
+
+---
+
+## Phase 1 - Macro-Planning With Gemini
+
+The FastAPI server (`ai_generator/server.py`) receives a user prompt and asks
+Gemini for a simplified macro-role grid. Each returned tile is not a real Tibia
+tile; it is a high-level 8x8 chunk instruction.
 
 Current macro roles:
 
-- `spawn_hub_dense`: dense spawn core, camp center, main room, or high-value
-  structural area.
-- `defensive_perimeter`: palisades, walls, rock edges, defensive terrain, or
-  biome boundaries.
-- `wild_surroundings`: natural corridors, forest, walkable cave space, and
-  traversal filler.
-- `camp_amenities`: beds, crates, campfires, supplies, chests, and roleplay
-  details.
+| Macro role | Meaning |
+| --- | --- |
+| `spawn_hub_dense` | Dense camp core, main room, creature hub, or high-value structure. |
+| `defensive_perimeter` | Palisades, walls, rock edges, hard boundaries, or defensive terrain. |
+| `wild_surroundings` | Forest, walkable cave corridors, natural filler, trails, and biome transitions. |
+| `camp_amenities` | Crates, bunks, campfires, supply corners, counters, and roleplay props. |
 
-The server uses model failover to reduce quota friction:
+Model failover is built in:
 
 ```python
 AVAILABLE_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
 ```
 
-If a model returns `ResourceExhausted` or a rate-limit style error, the server
-automatically retries with the next model in the list.
+If a model hits quota or rate limits, the server automatically tries the next
+model in the list.
 
-### Pipeline Flowchart
+---
 
-```mermaid
-flowchart TD
-    A["User Prompt"] --> B["Gemini Macro-Planning Phase"]
-    B --> C["8x8 Macro-Role Grid"]
-    C --> D["Python Micro-Construction"]
-    D --> D1["Cellular Automata Cave Carving"]
-    D --> D2["Pattern Matching from slices_pool.jsonl"]
-    D --> D3["Future Binary Space Partitioning (BSP) for Buildings"]
-    D1 --> E["Z-Level Biome Translator"]
-    D2 --> E
-    D3 --> E
-    E --> F["Edge Stitcher and Structural Linters"]
-    F --> G["Binary OTBM Injection"]
-    G --> H["generated_760.otbm"]
-    G --> I["generated_760-spawn.xml"]
-    F --> J["debug_render Z-Layer Images"]
-```
+## Phase 2 - Micro-Construction Engines
 
-### Phase 2 - Cellular Automata Micro-Construction
+Micro-construction happens in Python, not in the LLM. The semantic macro-grid is
+materialized by `ai_generator/autotiler.py`, which chooses real Tibia 7.60 IDs
+from RME rules, mined slices, and deterministic procedural algorithms.
 
-Micro-geometry is resolved in `ai_generator/autotiler.py`. Gemini does not
-choose raw Tibia IDs. Instead, Python materializes macro roles into valid Tibia
-7.60 tiles through deterministic systems:
+| Engine | Status | What it does |
+| --- | --- | --- |
+| **[Map] Organic Caves Engine (Cellular Automata)** | Active | Sculpted cave masks start as noisy wall/floor grids, then smooth into natural corridors. The engine opens connector gates between chunks, places rock walls along the mask, and concentrates gravel, mud, and small rubble near wall edges so path centers stay readable. |
+| **[Building] Urban Architecture Engine (BSP - Planned)** | Planned | Binary Space Partitioning will split macro-chunks into mathematically clean rooms, corridors, and service zones. The goal is to build depots, shops, houses, and temples with deterministic symmetry instead of free-form model guessing. |
+| **Real Slice Pattern Matcher** | Active | When real map fragments exist in `slices_pool.jsonl`, the engine can stamp compact CipSoft-like fragments directly into generated areas while preserving native prop rhythm. |
+| **Composite Structure Linter** | Active | Multi-tile sprites such as rocks, tents, counters, and camp structures are expanded near borders to prevent cut-off sprites and floating halves. |
 
-- 8x8 macro-chunk assembly.
-- Pattern matching against `ai_generator/slices_pool.jsonl`.
-- Semantic autotiling for walls, counters, lockers, tents, palisades, and props.
-- Cellular Automata cave carving for organic cave corridors.
-- Context-aware cave decoration that concentrates rubble, mud, and gravel near
-  rock walls while keeping corridor centers clear for pathfinding.
-- Composite-structure linting to avoid cutting multi-tile sprites at chunk
-  borders.
-
-For cave biomes such as `dirt_cave` and `ice_cave`, `wild_surroundings` chunks
-can be carved with `generate_cellular_cave(...)` instead of being copied from a
-flat slice. This produces smoother passages, more natural walls, and cleaner
-chunk-to-chunk continuity.
-
-The architecture is also prepared for Binary Space Partitioning (BSP). BSP is
-the planned building-generation layer for depots, shops, houses, and other
-urban structures where room subdivision, corridors, doors, and internal layout
-must be deterministic.
+---
 
 ### Understanding the Synthetic Debug Render
 
-The engine can bake a lightweight visual matrix before writing final OTBM bytes.
-This synthetic render is not meant to look like the Tibia client. It is a fast,
-color-coded inspection layer used by humans and by the Visual Agentic Loop to
-judge whether the map composition makes sense.
+Before writing final binary OTBM bytes, the engine can bake a tiny visual matrix
+called `debug_render.png`. This is not a Tibia screenshot. It is a color-coded
+architectural X-ray of the generated map.
 
 ![Synthetic debug render example](docs/gallery/debug_render_example.png)
 
-Color guide:
+**Green tiles**
+: Open traversal zone filler, such as forest grass, cave trails, organic ground,
+  or general walkable biome space.
 
-- Green tiles represent open traversal zone filler, such as forest grass, cave
-  trails, or general walkable biome space.
-- Red outlines map out walls, palisades, hard structural edges, and collision
-  boundaries that shape the room or camp silhouette.
-- Grey zones mark internal room flooring, stone surfaces, or specific floor
-  layers produced by the Z-Level Biome Translator.
-- Yellow square overlays point out dynamic decorations, containers, counters,
-  props, and interactive spawn assets.
+**Red outlines**
+: Walls, palisades, rock boundaries, hard collision edges, and structural shapes
+  that define the silhouette of a camp, cave, or building.
 
-This render is what lets the Visual Agentic Loop validate spatial composition
-with computer vision before the injector writes the final binary tile changes
-into the OTBM file. In practice, it acts like a fast architectural X-ray of the
-generated map.
+**Grey zones**
+: Internal room floors, stone surfaces, depot-like flooring, or Z-layer-specific
+  floor materials.
 
-### Phase 3 - Z-Level Biome Translator & Stitcher
+**Yellow square overlays**
+: Dynamic decorations, containers, counters, spawn-related props, and
+  interactive assets copied from real slices or placed by the autotiler.
 
-The engine supports three-dimensional Z-layer injection. When a real slice has
-`multilayer: true` and exposes `z_layers`, the autotiler can project adjacent
-floors above and below the base layer while preserving the selected XY offset.
+This render is the visual checkpoint used by the **Visual Agentic Loop**. Gemini
+can compare it against a real reference image, reason about composition, and
+rewrite the macro-role grid before the injector commits irreversible binary
+changes to the OTBM template.
 
-The Z-Level Biome Translator prevents visually invalid vertical inheritance:
+---
 
-- Upper layers of nature chunks can mutate into tent roofs, elevated wooden
-  platforms, or tree canopy.
-- Lower layers under surface nature do not inherit grass. They are translated
-  into rustic underground floors, dirt-cave materials, or basement-like spaces.
-- Static corpses and visually disruptive blockers are filtered from generic
-  underground decoration.
+## Phase 3 - Z-Level Biome Translator and Edge Stitcher
 
-The Edge Stitcher inspects shared chunk borders across the base plane and
-adjacent Z planes. It smooths hard seams, connects corridor exits, and reduces
-straight patch cuts between real slices and procedural geometry.
+RME AI supports multi-floor injection. If a mined slice contains `z_layers`, the
+autotiler can project roofs, upper platforms, basements, or lower cave floors
+while preserving the same XY alignment.
 
-## 3. Requirements and Setup
+The Z-Level Biome Translator prevents bad vertical inheritance:
+
+- Surface grass does not blindly appear in basements.
+- Amazon Camp upper layers can mutate into tent roofs, canopy, or wood-like
+  structures.
+- Lower layers can become rustic underground floors or dirt-cave systems.
+- Static corpses and disruptive blockers are filtered from generic underground
+  decoration.
+
+The Edge Stitcher then smooths chunk boundaries so roads, caves, palisades, and
+multi-floor details do not look like square pasted patches.
+
+---
+
+## Requirements and Setup
 
 Python 3.11 or newer is recommended.
-
-Install dependencies from the project root:
 
 ```powershell
 pip install -r requirements.txt
@@ -187,73 +188,64 @@ Set your Gemini API key:
 $env:GEMINI_API_KEY = "YOUR_API_KEY"
 ```
 
-The server reads the key only from `GEMINI_API_KEY`. Do not hardcode API keys in
-source files, prompts, test scripts, screenshots, or shell history committed to
-Git.
+The server reads the key only from `GEMINI_API_KEY`. Never hardcode API keys in
+source files, prompts, screenshots, or committed shell scripts.
 
-### Assets Setup - The Missing Link
+> [!IMPORTANT]
+> **Assets Setup - The Missing Link**
+>
+> This repository does not ship copyrighted Tibia client files, private maps, or
+> large mined datasets. To run the engine locally, you must provide your own
+> legally obtained assets:
+>
+> - `data/760/Tibia.dat`
+> - `data/760/Tibia.spr`
+> - `data/760/items.xml`
+> - `data/760/materials.xml`
+> - `data/760/walls.xml`
+> - `data/760/doodads.xml`
+> - `template/base_760.otbm`
+>
+> For targeted real-map mining, also provide:
+>
+> - `template/real map/world.otbm`
+> - `world-spawn.xml` or `template/real map/world-spawn.xml`
+>
+> Heavy assets, mined pools, real maps, generated OTBM files, and private visual
+> references are intentionally ignored by `.gitignore`.
 
-The repository does not include copyrighted Tibia client assets, real world
-maps, or large generated datasets. To run the engine locally, place your own
-legally obtained files in the expected folders:
+---
 
-Required for RME/Tibia 7.60 asset compatibility:
+## Running the API
 
-- `data/760/Tibia.dat`
-- `data/760/Tibia.spr`
-- `data/760/items.xml`
-- `data/760/materials.xml`
-- `data/760/walls.xml`
-- `data/760/doodads.xml`
-- `data/760/grounds.xml`
-- `data/760/borders.xml`
-- `data/760/tilesets.xml`
-
-Required for binary injection:
-
-- `template/base_760.otbm`
-
-Optional for targeted real-map mining:
-
-- `template/real map/world.otbm`
-- `world-spawn.xml` or `template/real map/world-spawn.xml`
-
-These heavy or copyrighted files are intentionally ignored by `.gitignore`.
-Users must provide them locally. Do not upload commercial Tibia assets, private
-maps, mined slice pools, or generated binary map outputs to a public repository
-unless you have the right to distribute them.
-
-Important data files:
-
-- `data/760/items.xml`: Tibia 7.60 item catalog and attributes.
-- `data/760/walls.xml`: native RME wall rules.
-- `data/760/doodads.xml`: native RME doodad compositions.
-- `template/base_760.otbm`: base map template for injection.
-- `template/real map/world.otbm`: optional real-world source map for mining.
-- `world-spawn.xml`: optional ecological index for creature-driven slicing.
-
-Large real maps and generated binary outputs should not be committed to a
-public repository. See `.gitignore` for the protected paths.
-
-## 4. Execution and Testing Guide
-
-### Start the Local Server
-
-Run from the project root:
+Start the local server:
 
 ```powershell
 uvicorn ai_generator.server:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Main endpoint:
+Endpoint:
 
 ```text
 POST http://127.0.0.1:8000/generate-map
 ```
 
-### Test: Amazon Camp Venore
+The main output files are written to `template/`:
 
-PowerShell example:
+| File | Purpose |
+| --- | --- |
+| `template/generated_760.otbm` | Final injected map. |
+| `template/generated_760-spawn.xml` | Optional generated spawn file. |
+| `template/debug_render.png` | Base synthetic render. |
+| `template/debug_render_p0.png`, `template/debug_render_p1.png` | Optional Z-layer inspection renders. |
+
+---
+
+## 6. Visual Examples and Prompt Gallery
+
+### [Fire] Example 1: Monsters Camp Surface
+
+![Monsters Camp Surface](docs/gallery/monsters_camp.jpg)
 
 ```powershell
 $body = @{
@@ -269,65 +261,11 @@ Invoke-RestMethod `
     -Body $body
 ```
 
-The server flow:
+---
 
-1. Detects the requested biome, creature, or archetype from the prompt.
-2. Selects real slices from `slices_pool.jsonl` when available.
-3. Requests a macro-role grid from Gemini.
-4. Materializes chunks with `autotiler.py`.
-5. Generates debug renders for visual inspection.
-6. Optionally runs a multimodal visual feedback phase when references exist.
-7. Injects the final tiles into the OTBM template.
-8. Generates a companion spawn XML when targeted slice metadata is available.
-
-## 5. Output Structure
-
-Primary outputs are written to `template/`:
-
-- `template/generated_760.otbm`: final injected map.
-- `template/generated_760-spawn.xml`: RME-compatible generated spawn file.
-- `template/debug_render.png`: synthetic debug render for the base layer.
-- `template/debug_render_p0.png`, `template/debug_render_p1.png`, etc.:
-  auxiliary Z-layer renders for vertical inspection.
-
-Generated tool data:
-
-- `ai_generator/tibia_760_catalog.json`: compact Tibia 7.60 item catalog.
-- `ai_generator/archetypes.json`: curated archetypes extracted from real maps.
-- `ai_generator/slices_pool.jsonl`: incremental pool of real map fragments.
-
-These generated datasets can become large and may contain data derived from
-private or copyrighted maps. They are ignored by default and should be
-regenerated locally when needed.
-
-## 6. Visual Examples & Prompt Gallery
-
-Use this section to link screenshots from `docs/gallery/` and keep the exact
-prompts that produced each result.
-
-### Monsters Camp Surface
-
-Image:
-
-![Monsters Camp Surface](docs/gallery/monsters_camp.jpg)
-
-Prompt:
-
-```powershell
-$body = @{
-    prompt = "Create a Tibia 7.60 Venore-style Amazon Camp with central canvas tents, defensive palisades, winding patrol paths, stacked supply crates, and Valkyrie resting bunks. It should feel like a classic CipSoft camp, not a square generic room."
-    width = 16
-    height = 16
-} | ConvertTo-Json
-```
-
-### Underground Cave System (-1)
-
-Image:
+### [Ice] Example 2: Underground Cave System (Floor -1)
 
 ![Underground Cave System](docs/gallery/underground_cave.jpg)
-
-Prompt:
 
 ```powershell
 $body = @{
@@ -335,17 +273,19 @@ $body = @{
     width = 24
     height = 24
 } | ConvertTo-Json
+
+Invoke-RestMethod `
+    -Uri "http://127.0.0.1:8000/generate-map" `
+    -Method Post `
+    -ContentType "application/json" `
+    -Body $body
 ```
 
-### Thais Depot Architecture
+---
 
-Reference image placeholder:
+### [Depot] Example 3: Thais Depot Architecture
 
-```text
-ai_generator/references/thais_depot.png
-```
-
-Prompt:
+![Thais Depot Architecture](docs/gallery/depot_example.jpg)
 
 ```powershell
 $body = @{
@@ -353,30 +293,29 @@ $body = @{
     width = 16
     height = 16
 } | ConvertTo-Json
+
+Invoke-RestMethod `
+    -Uri "http://127.0.0.1:8000/generate-map" `
+    -Method Post `
+    -ContentType "application/json" `
+    -Body $body
 ```
+
+---
 
 ## Main Modules
 
-- `ai_generator/server.py`: FastAPI entrypoint, prompts, model failover, slice
-  selection, visual feedback loop, spawn XML output, and final injection.
-- `ai_generator/autotiler.py`: semantic materialization engine, macro chunks,
-  Cellular Automata cave carving, Z-level rules, stitcher, and future BSP
-  integration point.
-- `ai_generator/injector.py`: binary OTBM writer with node traversal and byte
-  escaping support.
-- `ai_generator/map_slicer.py`: sequential and targeted mining of real map
-  slices, including collision metadata and multilayer Z capture.
-- `ai_generator/extractor.py`: curated point archetype extraction.
-- `ai_generator/rme_parser.py`: parser for native RME rules from `walls.xml` and
-  `doodads.xml`.
-- `ai_generator/map_renderer.py`: synthetic PNG renderer for visual debugging.
+| Module | Role |
+| --- | --- |
+| `ai_generator/server.py` | FastAPI entrypoint, Gemini prompts, model failover, visual feedback loop, and final orchestration. |
+| `ai_generator/autotiler.py` | Semantic materialization, macro chunks, Cellular Automata caves, Z-level rules, edge stitching, and BSP integration point. |
+| `ai_generator/injector.py` | Binary OTBM writer with node traversal and byte escaping. |
+| `ai_generator/map_slicer.py` | Sequential and targeted mining of real map slices with collision metadata and Z-layer capture. |
+| `ai_generator/extractor.py` | Curated point archetype extraction. |
+| `ai_generator/rme_parser.py` | Parser for native RME rules from `walls.xml` and `doodads.xml`. |
+| `ai_generator/map_renderer.py` | Synthetic PNG renderer for visual debugging. |
 
-## Design Philosophy
-
-The AI defines spatial intent. The engine resolves implementation. This
-separation reduces ID hallucinations, keeps Tibia 7.60 compatibility high, and
-lets classic procedural algorithms do what they are best at: geometry,
-connectivity, constraints, and deterministic cleanup.
+---
 
 ## Community Credits
 
@@ -386,5 +325,5 @@ engineering, documentation, and editor knowledge.
 Special thanks to OpenTibia.info and Tibiantis.info for publicly available
 graphical documentation and map-library imagery that helped shape the visual
 research direction of this PoC. Those references are used as design inspiration
-and visual study material; the repository does not redistribute copyrighted
+and visual study material; this repository does not redistribute copyrighted
 client assets or proprietary map files.
