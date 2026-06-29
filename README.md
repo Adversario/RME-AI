@@ -243,7 +243,7 @@ The main output files are written to `template/`:
 
 ## 6. Visual Examples and Prompt Gallery
 
-### [Fire] Example 1: Monsters Camp Surface
+### Example 1: Monsters Camp Surface
 
 ![Monsters Camp Surface](docs/gallery/monsters_camp.jpg)
 
@@ -263,7 +263,7 @@ Invoke-RestMethod `
 
 ---
 
-### [Ice] Example 2: Underground Cave System (Floor -1)
+### Example 2: Underground Cave System (Floor -1)
 
 ![Underground Cave System](docs/gallery/underground_cave.jpg)
 
@@ -283,7 +283,7 @@ Invoke-RestMethod `
 
 ---
 
-### [Depot] Example 3: Thais Depot Architecture
+### Example 3: Thais Depot Architecture
 
 ![Thais Depot Architecture](docs/gallery/depot_example.jpg)
 
